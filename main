@@ -1,0 +1,287 @@
+import os
+import sys
+import logging
+from pywinauto import Application, keyboard
+import pandas as pd
+import time
+from tqdm import tqdm
+
+
+def resource_path(relative_path):
+    """Получает абсолютный путь к ресурсу, работает как для разработки, так и для PyInstaller."""
+    try:
+        # PyInstaller сохраняет временные файлы в _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+# Определение путей к файлам
+PROCESSED_FILE = resource_path('processed.txt')
+EXCEL_FILE = resource_path('deb.XLSX')
+LOG_FILE = resource_path('sap_automation.log')
+
+# Настройка логирования
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+
+def prepare_send_keys_text(text):
+    """
+    Преобразует строку для использования с pywinauto's send_keys.
+    Заменяет пробелы на {SPACE} и экранирует фигурные скобки.
+
+    :param text: Исходная строка
+    :return: Преобразованная строка
+    """
+    if not isinstance(text, str):
+        text = str(text)
+    # Экранируем фигурные скобки
+    text = text.replace('{', '{{').replace('}', '}}')
+    # Заменяем пробелы на {SPACE}
+    text = text.replace(' ', '{SPACE}')
+    return text
+
+
+def load_processed_ids(file_path):
+    """
+    Загружает обработанные идентификаторы из файла.
+
+    :param file_path: Путь к файлу с обработанными идентификаторами
+    :return: Множество обработанных идентификаторов
+    """
+    if not os.path.exists(file_path):
+        # Создаём пустой файл, если он не существует
+        with open(file_path, 'w', encoding='utf-8') as f:
+            pass
+        return set()
+    with open(file_path, 'r', encoding='utf-8') as f:
+        processed = set(line.strip() for line in f if line.strip())
+    return processed
+
+
+def save_processed_id(file_path, debitor_id):
+    """
+    Сохраняет обработанный идентификатор в файл.
+
+    :param file_path: Путь к файлу с обработанными идентификаторами
+    :param debitor_id: Идентификатор дебитора для сохранения
+    """
+    with open(file_path, 'a', encoding='utf-8') as f:
+        f.write(f"{debitor_id}\n")
+def process_debitor(SAP_WINDOW, debitor, short_name, full_name, ur_adress):
+    try:
+        SAP_WINDOW.set_focus()
+
+        keyboard.send_keys('ZDEB{ENTER}', pause=0.1)
+        time.sleep(1.5)
+        keyboard.send_keys('{TAB}{TAB}{TAB}', pause=0.2)
+        time.sleep(0.5)
+        keyboard.send_keys(debitor, pause=0.1)
+        time.sleep(0.5)
+        keyboard.send_keys("+{TAB}+{TAB}+{TAB}+{TAB}", pause=0.01)
+        time.sleep(0.5)
+        keyboard.send_keys('{ENTER}')
+
+        time.sleep(0.5)
+        keyboard.send_keys("{TAB}" * 11, pause=0.01)
+        time.sleep(1)
+        keyboard.send_keys('{F2}')
+        time.sleep(5)
+
+        keyboard.send_keys('{ENTER}')
+
+        time.sleep(1.5)
+
+        # Преобразование строк
+        short_name_transformed = prepare_send_keys_text(short_name)
+        full_name_transformed = prepare_send_keys_text(full_name)
+        ur_adress_transformed = prepare_send_keys_text(ur_adress)
+
+        keyboard.send_keys("+{F1}")
+        time.sleep(0.5)
+        keyboard.send_keys(short_name_transformed)
+        time.sleep(0.5)
+        keyboard.send_keys('{TAB}')
+        time.sleep(0.5)
+        keyboard.send_keys(full_name_transformed)
+        time.sleep(0.5)
+        keyboard.send_keys('{ENTER}')
+        time.sleep(0.5)
+        # keyboard.send_keys("+{F12}")
+        keyboard.send_keys("+{TAB}" * 4)
+        time.sleep(0.5)
+        keyboard.send_keys('{ENTER}')
+        time.sleep(0.5)
+
+        alternative_adress_uia = Application(backend="uia").connect(title="Создание дебитора")
+        alternative_adress_window = alternative_adress_uia.window(title="Создание дебитора")
+        alternative_adress_window.wait('visible', timeout=5)
+
+        target_pane = alternative_adress_window.child_window(class_name="ATL:SAP TextEditBody")
+        target_pane.wait('visible', timeout=15)
+        
+
+        target_pane.set_focus()
+        time.sleep(0.1)
+        target_pane.click_input()
+        time.sleep(0.1)
+
+        keyboard.send_keys('test')
+
+        target_pane.type_keys("+{PGUP}", pause=0.1)
+        time.sleep(0.1)
+        target_pane.type_keys('{DELETE}', pause=0.1)
+        time.sleep(0.1)
+
+        target_pane.type_keys("+{PGDN}", pause=0.1)
+        time.sleep(0.5)
+        keyboard.send_keys("{DELETE}", pause=0.1)
+
+        logging.info(f"Текст для дебитора {debitor} успешно удалён.")
+
+        time.sleep(0.5)
+        keyboard.send_keys(ur_adress_transformed)
+        time.sleep(0.5)
+        keyboard.send_keys("^{TAB}")
+        time.sleep(0.5)
+        keyboard.send_keys('{ENTER}')
+        time.sleep(0.5)
+        keyboard.send_keys("+{ENTER}")
+
+        time.sleep(0.5)
+
+        element = alternative_adress_window.child_window(auto_id="59392")
+        element.wait('visible', timeout=15)
+        if element.is_visible():
+            element.click_input()
+            time.sleep(0.5)
+            element.type_keys("{TAB}{TAB}{TAB}")
+            time.sleep(0.5)
+            keyboard.send_keys('{ENTER}')
+
+            logging.info(f"Действие с элементом для дебитора {debitor} выполнено.")
+
+        time.sleep(1)
+
+        def close_popup():
+            logging.info("Запуск функции close_popup")
+            try:
+                # Подключаемся к основному приложению с заголовком 'Создание дебитора'
+                logging.debug("Попытка подключиться к приложению с заголовком 'Создание дебитора'")
+                app = Application(backend="uia").connect(title_re="Создание дебитора.*", timeout=10)
+                main_window = app.window(title_re="Создание дебитора.*")
+                logging.info("Успешно подключились к основному окну приложения")
+
+                main_window.set_focus()
+
+                keyboard.send_keys('{TAB}')
+                keyboard.send_keys('{ENTER}')
+                time.sleep(5)
+                target_pane.click_input()
+                keyboard.send_keys('{F3}')
+                time.sleep(1)
+                keyboard.send_keys('{F3}')
+
+            except Exception as e:
+                logging.error(e)
+
+        # Обработка возможного всплывающего окна
+        close_popup()
+
+        # Убедимся, что основное окно SAP снова в фокусе
+        time.sleep(0.5)
+
+        # Нажимаем F3 дважды для возврата
+        keyboard.send_keys('{F3}')
+        logging.info("Нажата клавиша F3 для возврата.")
+        time.sleep(0.5)
+        keyboard.send_keys('{F3}')
+        logging.info("Нажата клавиша F3 для возврата.")
+
+        # Дополнительная задержка, чтобы система успела обработать нажатия
+        time.sleep(1)
+
+        logging.info(f"Действие с элементом для дебитора {debitor} выполнено.")
+    except Exception as e:
+        logging.error(f"Ошибка при обработке дебитора {debitor}: {e}")
+        raise  # Повторно вызываем исключение, чтобы основная функция знала об ошибке
+
+
+def main():
+    try:
+        # Загрузка обработанных идентификаторов
+        processed_ids = load_processed_ids(PROCESSED_FILE)
+        logging.info(f"Загружено {len(processed_ids)} обработанных записей.")
+
+        # Загрузка данных из Excel
+        if not os.path.exists(EXCEL_FILE):
+            logging.critical(f"Файл {EXCEL_FILE} не найден.")
+            sys.exit(1)
+
+        df = pd.read_excel(
+            EXCEL_FILE,
+            engine='openpyxl',
+
+        )
+
+        required_columns = ['Debitor', 'Short_Name', 'Full_Name', 'Ur_Adress']
+        # Проверка количества колонок
+        if df.shape[1] < 8:  # Поскольку максимальный индекс 7, значит должно быть как минимум 8 колонок
+            logging.error("Excel файл должен содержать как минимум 8 колонок.")
+            sys.exit(1)
+
+        # Извлекаем необходимые колонки по индексам (1, 5, 6, 7)
+        debitor_col = df.columns[1]
+        short_name_col = df.columns[5]
+        full_name_col = df.columns[6]
+        ur_adress_col = df.columns[7]
+
+        
+
+        # Подключение к SAP
+        SAP_uia = Application(backend="uia").connect(title="SAP Easy Access")
+        SAP_WINDOW = SAP_uia.window(title="SAP Easy Access")
+        SAP_WINDOW.wait('visible', timeout=10)
+        SAP_WINDOW.set_focus()
+
+        total_rows = len(df)
+        logging.info(f"Начало обработки {total_rows} строк.")
+
+        # Используем tqdm для отображения прогресса
+        for index, row in tqdm(df.iterrows(), total=total_rows, desc="Обработка дебиторов"):
+            debitor = str(row.iloc[1]).strip()
+            print(debitor)
+            short_name = str(row.iloc[5]).strip()
+            full_name = str(row.iloc[6]).strip()
+            ur_adress = str(row.iloc[7]).strip()
+
+            # Проверка, был ли дебитор уже обработан
+            if debitor in processed_ids:
+                logging.info(f"Строка {index} с дебитором {debitor} уже обработана. Пропуск.")
+                continue
+
+            logging.info(
+                f"Обработка строки {index}: Дебитор={debitor}, Краткое имя={short_name}, Полное имя={full_name}, Юр адрес={ur_adress}")
+
+            try:
+                process_debitor(SAP_WINDOW, debitor, short_name, full_name, ur_adress)
+                # После успешной обработки сохраняем debitor в processed.txt
+                save_processed_id(PROCESSED_FILE, debitor)
+                processed_ids.add(debitor)  # Обновляем множество в памяти
+                logging.info(f"Дебитор {debitor} успешно обработан и добавлен в список обработанных.")
+            except Exception as e:
+                logging.error(f"Не удалось обработать дебитора {debitor}: {e}")
+                # Продолжаем обработку следующих строк
+                continue
+
+        logging.info("Обработка всех строк завершена.")
+    except Exception as e:
+        logging.critical(f"Критическая ошибка: {e}")
+
+
+if __name__ == "__main__":
+    main()
